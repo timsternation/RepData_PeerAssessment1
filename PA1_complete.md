@@ -1,0 +1,258 @@
+# Reproducible Research: Peer Assessment 1
+
+
+## Loading and preprocessing the data
+###navigate to the appropriate directory
+
+```r
+setwd("/Users/timbo/coursera/repro/Project1")
+```
+
+###download file
+
+```r
+if (!file.exists("./repdata-data-activity.zip")){
+        download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip",
+                      "repdata-data-activity.zip",method="curl")
+        
+}
+```
+
+###unzip file
+
+```r
+unzip("repdata-data-activity.zip")
+```
+
+###read file into R
+
+```r
+activity <- read.csv("activity.csv")
+```
+
+###load libraries
+
+```r
+library(ggplot2) #for plotting
+library(Rmisc) #for the multiplot function
+```
+
+```
+## Loading required package: lattice
+```
+
+```
+## Loading required package: plyr
+```
+
+###convert the columns into date and time objects
+
+```r
+activity$date <- as.Date(as.character(activity$date))
+activity$interval <- sprintf("%04d",activity$interval)
+activity$interval <- as.POSIXlt(activity$interval,format = "%H%M")
+activity$interval <- format(activity$interval,"%H:%M")
+```
+
+###create data.frame with NA values removed
+
+```r
+no_na_act <- activity[which(complete.cases(activity)),]
+```
+
+## What is mean total number of steps taken per day?
+### Calculate total number of steps for each day, na removed
+
+```r
+daily_sums <- plyr::ddply(no_na_act,"date",
+                          plyr::summarise,sum = sum(steps))
+names(daily_sums) <- c("date","steps")
+```
+
+### Plot histogram
+
+```r
+ggplot(daily_sums,aes(steps))+
+        xlab("Steps Per Day")+geom_histogram()
+```
+
+```
+## `stat_bin()` using `bins = 30`. Pick better value with `binwidth`.
+```
+
+![](PA1_complete_files/figure-html/unnamed-chunk-9-1.png)
+
+###Calculate mean and median per day
+
+```r
+summary(daily_sums$steps)
+```
+
+```
+##    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+##      41    8841   10760   10770   13290   21190
+```
+
+## What is the average daily activity pattern?
+### get mean for each interval
+
+```r
+interval_mean <- plyr::ddply(no_na_act,"interval",
+                             plyr::summarise,mean = mean(steps))
+```
+
+###plot time series
+
+```r
+ggplot(interval_mean,aes(interval,mean,group=1))+
+        scale_x_discrete(breaks=c("03:00","06:00","09:00","12:00",
+                                  "15:00","18:00","21:00"))+
+        geom_line()
+```
+
+![](PA1_complete_files/figure-html/unnamed-chunk-12-1.png)
+
+### Find interval with highest mean number of steps
+
+```r
+interval_mean[which(interval_mean$mean==max(interval_mean$mean)),]
+```
+
+```
+##     interval     mean
+## 104    08:35 206.1698
+```
+
+## Imputing missing values
+### Calculate number of rows with missing data
+
+```r
+steps_na<-sum(is.na(activity$steps))
+date_na<-sum(is.na(activity$date))
+interval_na<-(is.na(activity$interval))
+sum(c(steps_na,date_na,interval_na))
+```
+
+```
+## [1] 2304
+```
+
+### Replace missing value with mean for that interval-choosing this approach because of the degree of variablility among different intervals
+
+```r
+activity_filled <- activity # make a copy
+```
+
+### Replace rows missing steps by taking mean for a given interval
+
+```r
+activity_filled$steps <- ifelse(is.na(activity_filled$steps),
+                        interval_mean$mean[interval_mean$interval
+                        %in% activity_filled$interval],
+                        activity_filled$steps)
+```
+
+### Daily sums using imputed data
+
+```r
+daily_sums_filled <- plyr::ddply(activity_filled,"date",
+                                 plyr::summarise,sum = sum(steps))
+names(daily_sums_filled) <- c("date","steps")
+```
+
+### Original histogram - NA removed
+
+```r
+h1 <- ggplot(daily_sums,aes(steps))+
+        xlab("Steps Per Day - NA Removed")+geom_histogram()
+```
+
+### New histogram - NA imputed
+
+```r
+h2 <- ggplot(daily_sums_filled,aes(steps))+
+        xlab("Steps Per Day - NA Imputed")+geom_histogram()
+```
+
+### Plot histograms side-by-side for comparison
+
+```r
+multiplot(h1,h2)
+```
+
+```
+## `stat_bin()` using `bins = 30`. Pick better value with `binwidth`.
+## `stat_bin()` using `bins = 30`. Pick better value with `binwidth`.
+```
+
+![](PA1_complete_files/figure-html/unnamed-chunk-20-1.png)
+
+### Compare median and means
+
+```r
+summary(daily_sums$steps) #old data
+```
+
+```
+##    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+##      41    8841   10760   10770   13290   21190
+```
+
+```r
+summary(daily_sums_filled$steps) #new data
+```
+
+```
+##    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+##      41    9819   10770   10770   12810   21190
+```
+
+## Are there differences in activity patterns between weekdays and weekends?
+### Set up weekday variable
+
+```r
+activity_filled$day_type <- ifelse(weekdays(activity_filled$date)       
+                                   %in% c("Monday","Tuesday","Wednesday",
+                                          "Thursday","Friday"),
+                                   activity_filled$day_type <- "weekday",
+                                   activity_filled$day_type <- "weekend")
+```
+
+### Subset data plot
+
+```r
+weekday_df <- activity_filled[which(activity_filled$day_type=="weekday"),]
+weekend_df <- activity_filled[which(activity_filled$day_type=="weekend"),]
+```
+
+### Calculate mean for each data set
+
+```r
+wd_interval_mean <- plyr::ddply(weekday_df,"interval",
+                             plyr::summarise,mean = mean(steps))
+we_interval_mean <- plyr::ddply(weekend_df,"interval",
+                                plyr::summarise,mean=mean(steps))
+```
+
+### Create plots
+
+```r
+wd_ts <- ggplot(wd_interval_mean,aes(interval,mean,group=1))+
+        scale_x_discrete(breaks=c("03:00","06:00","09:00","12:00",
+                                  "15:00","18:00","21:00"))+
+        ylim(0,250)+
+        ggtitle("Weekday Step Count by Interval")+
+        geom_line()
+
+we_ts <- ggplot(we_interval_mean,aes(interval,mean,group=1))+
+        scale_x_discrete(breaks=c("03:00","06:00","09:00","12:00",
+                                  "15:00","18:00","21:00"))+
+        ylim(0,250)+
+        ggtitle("Weekend Step Count by Interval")+
+        geom_line()
+
+# display plots
+multiplot(wd_ts,we_ts)
+```
+
+![](PA1_complete_files/figure-html/unnamed-chunk-25-1.png)
